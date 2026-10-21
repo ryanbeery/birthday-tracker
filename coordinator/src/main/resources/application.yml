@@ -1,0 +1,20 @@
+# Defaults for running outside Docker against the Compose services on localhost.
+# In Compose, SPRING_* environment variables override these.
+spring:
+  application:
+    name: coordinator
+  datasource:
+    url: jdbc:postgresql://localhost:5432/birthdays
+    username: birthday
+    password: birthday
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: admin
+    password: pass
+
+management:
+  endpoint:
+    health:
+      # List db and rabbit as components, so the health check shows what's down.
+      show-components: always
