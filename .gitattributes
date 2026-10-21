@@ -1,0 +1,11 @@
+# Store and check out text files with LF, even on Windows, so nothing that gets
+# copied into a Linux container (shell scripts, mvnw, configs) picks up CRLF.
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+*.ico binary
+*.png binary
+*.jar binary

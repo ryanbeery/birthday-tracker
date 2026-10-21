@@ -1,0 +1,22 @@
+# Dependencies and build output
+node_modules/
+dist/
+target/
+*.tsbuildinfo
+.eslintcache
+coverage/
+
+# Local config and secrets
+.env
+*.local
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# OS and logs
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
