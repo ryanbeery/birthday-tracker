@@ -105,7 +105,7 @@ Before adding a dependency, changing a contract above, or making any choice this
 
 - Ryan works on Windows in IntelliJ IDEA Ultimate, and everything runs in Linux containers. `.gitattributes` keeps line endings LF. Git on Windows doesn't record the executable bit, so new scripts are staged with `git add --chmod=+x`, and Dockerfiles and CI call `sh mvnw` to be safe.
 - `.idea/`, `.env`, `node_modules/`, `dist/` and `target/` stay out of git. Config comes from environment variables, and `.env.example` lists them all.
-- Ports: UI 5173, API 3000, coordinator 8080, RabbitMQ 5672 with its UI on 15672 (guest/guest), Postgres 5432.
+- Ports: UI 5173, API 3000, coordinator 8080, RabbitMQ 5672 with its UI on 15672 (admin/pass), Postgres 5432.
 
 ## Commands
 

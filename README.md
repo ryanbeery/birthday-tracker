@@ -22,7 +22,7 @@ The first build downloads the npm and Maven dependencies, so it takes a few minu
 | UI | http://localhost:5173 |
 | API health | http://localhost:3000/health |
 | Coordinator health | http://localhost:8080/actuator/health |
-| RabbitMQ management UI | http://localhost:15672 (guest / guest) |
+| RabbitMQ management UI | http://localhost:15672 (admin / pass) |
 | PostgreSQL | localhost:5432 (credentials in `.env`) |
 
 **Troubleshooting**
