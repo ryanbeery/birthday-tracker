@@ -5,8 +5,8 @@ spring:
     name: coordinator
   datasource:
     url: jdbc:postgresql://localhost:5432/birthdays
-    username: birthday
-    password: birthday
+    username: admin
+    password: pass
   rabbitmq:
     host: localhost
     port: 5672
