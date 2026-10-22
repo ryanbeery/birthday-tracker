@@ -3,7 +3,7 @@ import request from 'supertest'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { createApp } from '../src/app.js'
 import { errorHandler } from '../src/errors.js'
-import type { SubmissionPublisher } from '../src/publisher.js'
+import { PublisherConfigError, type SubmissionPublisher } from '../src/publisher.js'
 
 const NOW = new Date('2026-10-22T00:30:00Z')
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -122,6 +122,15 @@ describe('POST /api/birthdays', () => {
 
     expectError(res, 503)
     expect(res.text).not.toContain('broker connection closed')
+    expect(console.error).toHaveBeenCalled()
+  })
+
+  it('returns a generic 500 when RabbitMQ rejects the credentials or queue setup, since a retry cannot help', async () => {
+    publish.mockRejectedValue(new PublisherConfigError('ACCESS_REFUSED - Login was refused'))
+    const res = await post(valid)
+
+    expectError(res, 500)
+    expect(res.text).not.toContain('ACCESS_REFUSED')
     expect(console.error).toHaveBeenCalled()
   })
 
