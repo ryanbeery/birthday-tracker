@@ -23,7 +23,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW)
   vi.spyOn(console, 'error').mockImplementation(() => {})
   publish = vi.fn<SubmissionPublisher['publish']>().mockResolvedValue(undefined)
-  app = createApp({ publisher: { publish } })
+  app = createApp({ publisher: { publish }, db: { query: vi.fn() } })
 })
 
 afterEach(() => {
