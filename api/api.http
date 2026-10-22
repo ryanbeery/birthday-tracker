@@ -1,0 +1,45 @@
+### Sample requests for IntelliJ's HTTP Client (run with `docker compose up`).
+
+### A valid submission: 202 with the new id
+POST http://localhost:3000/api/birthdays
+Content-Type: application/json
+
+{
+  "name": "Ada Lovelace",
+  "email": "ada@example.com",
+  "birthday": "1990-12-10",
+  "reminderWindowDays": 7,
+  "giftIdeas": "A first edition of her notes"
+}
+
+### Several bad fields: 400 listing each one
+POST http://localhost:3000/api/birthdays
+Content-Type: application/json
+
+{
+  "name": "  ",
+  "email": "not-an-email",
+  "birthday": "2023-02-30",
+  "reminderWindowDays": 15
+}
+
+### An unknown field: 400
+POST http://localhost:3000/api/birthdays
+Content-Type: application/json
+
+{
+  "id": "5b0e5a3c-1f6e-4a52-9a3b-2f1d6c7e8a90",
+  "name": "Ada Lovelace",
+  "email": "ada@example.com",
+  "birthday": "1990-12-10",
+  "reminderWindowDays": 7
+}
+
+### Malformed JSON: 400
+POST http://localhost:3000/api/birthdays
+Content-Type: application/json
+
+{"name": "Ada
+
+### An unknown route: 404
+GET http://localhost:3000/api/unknown
