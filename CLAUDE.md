@@ -42,7 +42,7 @@ Changing anything in this section needs Ryan's approval first (see "Stop and ask
 
 | Route | Result |
 |---|---|
-| `POST /api/birthdays` | 202 `{ id }` once the broker confirms. 400 on validation errors (unknown fields included) or malformed JSON, 413 if the body is over 100 KB, and 503 if publishing fails or isn't confirmed within 5 seconds. Invalid input is never published. A 202 means accepted, not saved. |
+| `POST /api/birthdays` | 202 `{ id }` once the broker confirms. 400 on validation errors (unknown fields included) or malformed JSON, 413 if the body is over 100 KB, 503 if publishing fails or isn't confirmed within 5 seconds, and a generic 500 if RabbitMQ refuses the API's credentials or queue arguments, since a retry can't help. Invalid input is never published. A 202 means accepted, not saved. |
 | `GET /api/birthdays` | List sorted by next upcoming birthday, with days until it and `turningAge`. 503 if the database is unavailable. |
 | `GET /api/birthdays/:id` | One entry. 404 if it doesn't exist (expected briefly while the message is in flight), 400 if the id isn't a UUID, 503 if the database is unavailable. |
 | `GET /health` | API liveness. The coordinator's is `/actuator/health`. |

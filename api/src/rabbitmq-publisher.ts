@@ -1,5 +1,5 @@
 import { connect, type ChannelModel, type ConfirmChannel } from 'amqplib'
-import type { SubmissionMessage, SubmissionPublisher } from './publisher.js'
+import { PublisherConfigError, type SubmissionMessage, type SubmissionPublisher } from './publisher.js'
 
 const QUEUE = 'birthday.submissions'
 
@@ -48,7 +48,9 @@ export class RabbitMqPublisher implements SubmissionPublisher {
   }
 
   async #open(onClosed: () => void) {
-    const connection = await connect(this.url)
+    const connection = await connect(this.url).catch((error) => {
+      throw toConfigError(error)
+    })
     this.#connection = connection
     // Without 'error' listeners, a dropped connection would crash the process.
     connection.on('error', (error) => console.error('RabbitMQ connection error', error))
@@ -64,7 +66,21 @@ export class RabbitMqPublisher implements SubmissionPublisher {
       return channel
     } catch (error) {
       await connection.close().catch(() => {})
-      throw error
+      throw toConfigError(error)
     }
   }
+}
+
+/**
+ * Marks RabbitMQ's refusals of our own setup: 403 for bad credentials and 406
+ * for queue arguments that don't match the coordinator's. A failed login has no
+ * code, only the reply text, so that's checked too.
+ */
+function toConfigError(error: unknown) {
+  if (!(error instanceof Error)) return error
+  const code = (error as { code?: unknown }).code
+  if (code === 403 || code === 406 || error.message.includes('ACCESS-REFUSED')) {
+    return new PublisherConfigError(error.message, { cause: error })
+  }
+  return error
 }
