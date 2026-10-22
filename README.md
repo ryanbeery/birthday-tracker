@@ -73,6 +73,12 @@ This is also why the insert uses `ON CONFLICT DO NOTHING` rather than an upsert:
 
 Telling the UI the moment a submission is saved is also future work. The coordinator would publish a `birthday.saved` event after its commit, and the API would consume it and stream it to the browser over Server-Sent Events.
 
+A 503 from the POST doesn't prove the submission was lost. If the broker saves the message but its confirm misses the API's 5-second limit, or the connection drops before the confirm arrives, the API returns 503, and a client that retries creates a second entry. Idempotency keys would close this gap: the client sends an `Idempotency-Key` header and reuses it on retries, the API derives the entry's id from the key, and the coordinator's `ON CONFLICT DO NOTHING` drops the repeat. They aren't built because a key reused with a different body would be dropped silently. Catching that needs a store of keys and request hashes, which the read-only API would have to write.
+
+The UI and the API share the submission contract by convention. A shared package (npm workspaces) or an OpenAPI-generated client would let the compiler check the UI's requests against the API's schema.
+
+Cross-site scripting is handled where text is displayed: Vue escapes everything it renders, and the reminder contract tells the email service to escape `name` and `giftIdeas`. A Content-Security-Policy header from nginx would be a backstop if escaping were ever bypassed.
+
 ## How I used AI
 
 _To come:_ how the plan was drafted, reviewed and built with coding agents, and what I accepted, rejected and verified myself.
@@ -87,6 +93,11 @@ One line per decision made during the build. Each started as options with a reco
 | Node version | Node 24, or Node 22 as first planned | Node 24. Node 22 reaches end of life on April 30, 2027. |
 | TypeScript version | 6.0 or 7.0 | 6.0. The ESLint TypeScript tooling doesn't support 7 yet. |
 | How the UI finds a new entry after a 202 | One refetch after about a second, retries with backoff, or a push from the coordinator | One refetch, then a Refresh button. The write normally lands within milliseconds, and a push needs an event, a consumer and a streaming endpoint (see Production readiness). |
+| Unknown fields in a submission | Reject with a 400, or drop them silently | Reject. The API accepts exactly the documented fields, so a client can't choose its own id, and a misspelled optional field fails loudly instead of losing its value. |
+| Blank gift ideas | Trim them and leave them out when blank, or store what was sent | Trim and leave out, so an empty text box doesn't store `""` or put an empty gift line in every reminder. |
+| Who declares the submissions queue | The API and the coordinator, with identical arguments, or only the coordinator, with the API publishing as mandatory | Both. RabbitMQ confirms and then drops a message sent to a queue that doesn't exist yet, so the API declares the queue before its first publish and can take submissions while the coordinator is down. Mismatched arguments fail loudly at startup. |
+| Idempotency keys on POST | Build them now, or leave them as future work | Future work. The basic version is small, but a key reused with a different body would be dropped silently, and catching that needs a key store the read-only API can't write (see Production readiness). |
+| Control characters in text fields | Reject control characters and broken Unicode in names and gift ideas, or reject only NUL | Reject both. Postgres can't store NUL, so the API would accept it and the coordinator would dead-letter it, and a line break or escape code in a name is never real. Gift ideas keep tabs and line breaks. |
 
 ## Time spent and tests run
 

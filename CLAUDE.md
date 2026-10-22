@@ -30,27 +30,28 @@ Remind:  coordinator (daily, UTC) -> PostgreSQL -> RabbitMQ birthday.reminders -
 - The API publishes through a small publisher interface, so tests can mock it and SQS could replace RabbitMQ.
 - Age is never stored. `turningAge` (occurrence year minus birth year) is computed on read.
 - Time is UTC everywhere, and dates travel as `YYYY-MM-DD` strings. In Node, parse dates strictly (JS `Date` turns `2023-02-30` into March 2), and give `pg` a DATE type parser so dates come back as strings. In Java, use `LocalDate`.
+- User text is plain text everywhere. The UI shows it only through Vue's escaped bindings, never with `v-html` or in an `href`, and the reminder contract tells consumers to escape it.
 
 ## Contracts
 
 Changing anything in this section needs Ryan's approval first (see "Stop and ask").
 
-**`birthdays` table:** `id` uuid PK, from the API · `name` text, trimmed, 1–100 chars · `email` text, the reminder recipient · `birthday` date, year 1900 or later, not in the future · `reminder_window_days` smallint, CHECK 1–14 · `gift_ideas` text, nullable, up to 500 chars · `last_reminded_occurrence` date, nullable · `created_at` timestamptz, default `now()`
+**`birthdays` table:** `id` uuid PK, from the API · `name` text, trimmed, 1–100 chars, no control characters · `email` text, the reminder recipient · `birthday` date, year 1900 or later, not in the future · `reminder_window_days` smallint, CHECK 1–14 · `gift_ideas` text, nullable, trimmed, up to 500 chars, no control characters except tabs and line breaks, null when blank · `last_reminded_occurrence` date, nullable · `created_at` timestamptz, default `now()`
 
 **HTTP:** JSON in and out, no auth. Errors are `{ "error": "...", "details": [...] }`.
 
 | Route | Result |
 |---|---|
-| `POST /api/birthdays` | 202 `{ id }` once the broker confirms. 400 on validation errors or malformed JSON, 503 if publishing fails. Invalid input is never published. A 202 means accepted, not saved. |
+| `POST /api/birthdays` | 202 `{ id }` once the broker confirms. 400 on validation errors (unknown fields included) or malformed JSON, 413 if the body is over 100 KB, and 503 if publishing fails or isn't confirmed within 5 seconds. Invalid input is never published. A 202 means accepted, not saved. |
 | `GET /api/birthdays` | List sorted by next upcoming birthday, with days until it and `turningAge`. 503 if the database is unavailable. |
 | `GET /api/birthdays/:id` | One entry. 404 if it doesn't exist (expected briefly while the message is in flight), 400 if the id isn't a UUID, 503 if the database is unavailable. |
 | `GET /health` | API liveness. The coordinator's is `/actuator/health`. |
 
 Unknown routes return 404, and anything unexpected returns 500, both in the error shape. Error responses never include stack traces or SQL; those go to the logs.
 
-**Submission message** (queue `birthday.submissions`): `{ id, name, email, birthday, reminderWindowDays, giftIdeas?, submittedAt }`
+**Submission message** (queue `birthday.submissions`): `{ id, name, email, birthday, reminderWindowDays, giftIdeas?, submittedAt }`. `giftIdeas` is left out when blank. Messages are persistent JSON with content type `application/json`. The API and the coordinator both declare the queue as durable, with `x-dead-letter-exchange: ""` and `x-dead-letter-routing-key: birthday.submissions.dlq`. The API declares it because RabbitMQ confirms and then drops a message sent to a queue that doesn't exist yet. The arguments must match exactly, or RabbitMQ rejects the second declaration.
 
-**Reminder message** (exchange `birthday.reminders`): `{ eventId, type: "birthday.reminder", birthdayId, name, email, birthday, occurrenceDate, turningAge, giftIdeas?, reminderWindowDays, generatedAt }`. `eventId` is derived from `birthdayId` and `occurrenceDate`, so consumers can dedupe.
+**Reminder message** (exchange `birthday.reminders`): `{ eventId, type: "birthday.reminder", birthdayId, name, email, birthday, occurrenceDate, turningAge, giftIdeas?, reminderWindowDays, generatedAt }`. `eventId` is derived from `birthdayId` and `occurrenceDate`, so consumers can dedupe. `name` and `giftIdeas` are plain text, which consumers must escape for their output, such as HTML email.
 
 **Reminder rule:** the occurrence is the next birthday on or after today, and Feb 29 falls on Feb 28 in non-leap years. A daily run sends when `occurrence - N <= today < occurrence` and `last_reminded_occurrence != occurrence`, then sets `last_reminded_occurrence = occurrence`. The birthday itself never triggers a send. The cron is `${reminders.cron}` in UTC, every minute in the local profile. `ReminderCalculator` is pure logic with an injected `Clock`. One coordinator instance is assumed.
 
