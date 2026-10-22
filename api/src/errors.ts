@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler, Response } from 'express'
+import { isDatabaseUnavailable } from './db.js'
 
 /** Sends the API's one error shape, `{ error, details }`. */
 export function sendError(res: Response, status: number, error: string, details: unknown[] = []) {
@@ -18,6 +19,12 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
   // limit) as safe to expose, with the status to use.
   if (err?.expose && err.status >= 400 && err.status < 500) {
     sendError(res, err.status, err.type === 'entity.parse.failed' ? 'Malformed JSON' : err.message)
+    return
+  }
+  // The database is down or overloaded, which a retry may fix.
+  if (isDatabaseUnavailable(err)) {
+    console.error('Database unavailable', err)
+    sendError(res, 503, 'Birthdays are unavailable, try again shortly')
     return
   }
   // Anything else is a bug: log the details, return nothing about them.
