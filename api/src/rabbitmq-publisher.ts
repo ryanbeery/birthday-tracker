@@ -1,15 +1,19 @@
 import { connect, type ChannelModel, type ConfirmChannel } from 'amqplib'
 import { PublisherConfigError, type SubmissionMessage, type SubmissionPublisher } from './publisher.js'
 
-const QUEUE = 'birthday.submissions'
+export const QUEUE = 'birthday.submissions'
 
-// Must match the coordinator's declaration exactly, or RabbitMQ refuses the
-// second one. Declaring it here too matters: RabbitMQ confirms and then drops a
-// message sent to a queue that doesn't exist yet.
-const QUEUE_OPTIONS = {
+// The coordinator declares this queue too, and RabbitMQ refuses a second
+// declaration whose arguments differ. Both must match
+// contracts/submission-queue.json, which a test on each side checks. Declaring
+// it here too matters: RabbitMQ confirms and then drops a message sent to a
+// queue that doesn't exist yet.
+export const QUEUE_OPTIONS = {
   durable: true,
-  deadLetterExchange: '',
-  deadLetterRoutingKey: 'birthday.submissions.dlq',
+  arguments: {
+    'x-dead-letter-exchange': '',
+    'x-dead-letter-routing-key': 'birthday.submissions.dlq',
+  },
 }
 
 /** Publishes submissions on a confirm channel, reconnecting on the next publish after the broker goes away. */

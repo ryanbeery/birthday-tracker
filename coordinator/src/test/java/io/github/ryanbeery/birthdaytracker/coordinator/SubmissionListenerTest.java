@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -32,6 +33,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The coordinator's half of the submit flow, against real PostgreSQL (built from
@@ -74,6 +76,10 @@ class SubmissionListenerTest {
             String giftIdeas,
             LocalDate lastRemindedOccurrence,
             OffsetDateTime createdAt) {
+    }
+
+    /** contracts/submission-queue.json, the declaration both services must match. */
+    record QueueContract(String queue, boolean durable, Map<String, Object> arguments) {
     }
 
     @Autowired
@@ -171,16 +177,15 @@ class SubmissionListenerTest {
     }
 
     @Test
-    void acceptsTheApisDeclarationOfTheQueue() {
-        // What api/src/rabbitmq-publisher.ts declares. RabbitMQ refuses a declaration whose
-        // arguments differ from the existing queue's, with 406 PRECONDITION_FAILED.
-        Map<String, Object> apiArguments = Map.of(
-                "x-dead-letter-exchange", "",
-                "x-dead-letter-routing-key", DEAD_LETTER_QUEUE);
+    void declaresTheQueueAsTheSharedContractDescribes() {
+        // The API's tests check its declaration against the same file. RabbitMQ refuses a
+        // declaration whose arguments differ from the existing queue's, with 406 PRECONDITION_FAILED.
+        QueueContract contract = JsonMapper.builder().build()
+                .readValue(new File("../contracts/submission-queue.json"), QueueContract.class);
 
         assertThatNoException().isThrownBy(() -> rabbit.execute(channel -> {
-            channel.queueDeclarePassive(QUEUE);  // fails unless the coordinator declared it
-            return channel.queueDeclare(QUEUE, true, false, false, apiArguments);
+            channel.queueDeclarePassive(contract.queue());  // fails unless the coordinator declared it
+            return channel.queueDeclare(contract.queue(), contract.durable(), false, false, contract.arguments());
         }));
     }
 
