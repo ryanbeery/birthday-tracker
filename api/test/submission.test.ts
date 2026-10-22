@@ -36,14 +36,16 @@ describe('parseSubmission', () => {
   })
 
   it.each([
-    { field: 'name', value: 'x'.repeat(100), label: 'a 100-character name' },
+    { field: 'name', value: ` ${'x'.repeat(100)} `, label: 'a name of 100 characters after trimming' },
+    { field: 'name', value: 'Émilie du Châtelet', label: 'a name with accented letters' },
     { field: 'birthday', value: '2024-02-29', label: 'a leap day' },
     { field: 'birthday', value: '1900-01-01', label: 'the earliest allowed date' },
     { field: 'birthday', value: '2026-10-22', label: "today's UTC date" },
     { field: 'reminderWindowDays', value: 1, label: 'a window of 1' },
     { field: 'reminderWindowDays', value: 14, label: 'a window of 14' },
-    { field: 'giftIdeas', value: 'x'.repeat(500), label: '500 characters of gift ideas' },
-    { field: 'giftIdeas', value: 'Books:\n\tpoetry', label: 'gift ideas with a tab and a line break' },
+    { field: 'giftIdeas', value: ` ${'x'.repeat(500)} `, label: 'gift ideas of 500 characters after trimming' },
+    { field: 'giftIdeas', value: 'Books:\r\n\tpoetry', label: 'gift ideas with a tab and a Windows line break' },
+    { field: 'giftIdeas', value: 'A 🎂 and a card', label: 'gift ideas with an emoji' },
   ])('accepts $label', ({ field, value }) => {
     expect(rejectedFields({ ...valid, [field]: value })).toEqual([])
   })
@@ -54,6 +56,8 @@ describe('parseSubmission', () => {
     { field: 'name', value: '   ', label: 'a name of only spaces' },
     { field: 'name', value: ` ${'x'.repeat(101)} `, label: 'a name of 101 characters after trimming' },
     { field: 'name', value: 'Ada\nLovelace', label: 'a line break in a name' },
+    { field: 'name', value: 'Ada\tLovelace', label: 'a tab in a name' },
+    { field: 'name', value: '\u001b[31mAda', label: 'an escape code in a name' },
     { field: 'name', value: 'Ada\u0000', label: 'a NUL in a name' },
     { field: 'name', value: 'Ada\uD800', label: 'broken Unicode in a name' },
     { field: 'email', value: undefined, label: 'a missing email' },

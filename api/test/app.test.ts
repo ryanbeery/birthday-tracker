@@ -124,6 +124,23 @@ describe('POST /api/birthdays', () => {
     expect(res.text).not.toContain('broker connection closed')
     expect(console.error).toHaveBeenCalled()
   })
+
+  it('returns 503 when publishing is not confirmed within 5 seconds', async () => {
+    let started!: () => void
+    const publishing = new Promise<void>((resolve) => (started = resolve))
+    publish.mockImplementation(() => {
+      started()
+      return new Promise<void>(() => {})
+    })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+    // Move the clock only once the route is waiting on the publisher.
+    const response = post(valid).then((res) => res)
+    await publishing
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expectError(await response, 503)
+  })
 })
 
 describe('errors outside the route', () => {
