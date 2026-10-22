@@ -18,6 +18,7 @@ Remind:  coordinator (daily, UTC) -> PostgreSQL -> RabbitMQ birthday.reminders -
 | `api/` | REST API and publisher. Tests in `api/test/`. | Node 24, Express, TypeScript, Zod, `pg`, amqplib |
 | `coordinator/` | Consumer, only writer, scheduler: `SubmissionListener`, `BirthdayRepository`, `ReminderCalculator`, `ReminderJob`, `ReminderPublisher` | Java 21, Spring Boot, Maven wrapper, Spring AMQP, JdbcClient, Actuator |
 | `db/init.sql` | The only schema definition | PostgreSQL |
+| `contracts/submission-queue.json` | The submissions queue declaration both services must match, checked by a test on each side | JSON |
 | `compose.yaml` | Runs everything locally, with health checks and a Postgres volume | Docker Compose |
 
 ## Design rules
@@ -49,7 +50,7 @@ Changing anything in this section needs Ryan's approval first (see "Stop and ask
 
 Unknown routes return 404, and anything unexpected returns 500, both in the error shape. Error responses never include stack traces or SQL; those go to the logs.
 
-**Submission message** (queue `birthday.submissions`): `{ id, name, email, birthday, reminderWindowDays, giftIdeas?, submittedAt }`. `giftIdeas` is left out when blank. Messages are persistent JSON with content type `application/json`. The API and the coordinator both declare the queue as durable, with `x-dead-letter-exchange: ""` and `x-dead-letter-routing-key: birthday.submissions.dlq`. The API declares it because RabbitMQ confirms and then drops a message sent to a queue that doesn't exist yet. The arguments must match exactly, or RabbitMQ rejects the second declaration.
+**Submission message** (queue `birthday.submissions`): `{ id, name, email, birthday, reminderWindowDays, giftIdeas?, submittedAt }`. `giftIdeas` is left out when blank. Messages are persistent JSON with content type `application/json`. The API and the coordinator both declare the queue exactly as `contracts/submission-queue.json` describes: durable, and dead-lettering to `birthday.submissions.dlq`. That file is the only written copy of the arguments, and a test on each side checks its declaration against it, so change the file and both declarations together. The API declares the queue because RabbitMQ confirms and then drops a message sent to a queue that doesn't exist yet. If the two declarations differ, RabbitMQ rejects the second one at startup.
 
 **Reminder message** (exchange `birthday.reminders`): `{ eventId, type: "birthday.reminder", birthdayId, name, email, birthday, occurrenceDate, turningAge, giftIdeas?, reminderWindowDays, generatedAt }`. `eventId` is derived from `birthdayId` and `occurrenceDate`, so consumers can dedupe. `name` and `giftIdeas` are plain text, which consumers must escape for their output, such as HTML email.
 
@@ -80,6 +81,7 @@ TDD is required where a bug would fail silently:
 - `ReminderCalculator` (JUnit, fixed dates): both window edges, the day before the window opens, Dec -> Jan rollover, Feb 29 in a non-leap year, an already-reminded occurrence, and `turningAge` (including a Feb 29 birthday).
 - The Zod submission schema, including strict dates (`2023-02-30` is rejected).
 - `POST /api/birthdays` (Vitest and supertest, publisher mocked): 202, 400 (including malformed JSON) and 503, and invalid input never publishes.
+- `SubmissionListener` (JUnit against real PostgreSQL and RabbitMQ via Testcontainers): a redelivery leaves one row, a brief error is retried, rejected and malformed messages are dead-lettered, and unknown fields are ignored.
 
 Each one goes through three gates, in order:
 
@@ -114,5 +116,5 @@ Before adding a dependency, changing a contract above, or making any choice this
 cp .env.example .env && docker compose up --build   # the whole stack
 cd api && npm ci && npm run lint && npm run type-check && npm test
 cd frontend && npm ci && npm run lint && npm run type-check && npm run build
-cd coordinator && ./mvnw verify                      # mvnw.cmd verify on Windows
+cd coordinator && ./mvnw verify                      # mvnw.cmd verify on Windows. Needs Docker running.
 ```

@@ -36,7 +36,7 @@ _To come:_ unit tests for each app, `scripts/smoke.sh` for an end-to-end check, 
 
 ## Development approach: test-driven
 
-_To come:_ tests are written and approved before the code they cover. This was required for the reminder calculator, submission validation and the POST status contract, where a bug would fail silently.
+_To come:_ tests are written and approved before the code they cover. This was required for the reminder calculator, submission validation, the POST status contract and the queue listener, where a bug would fail silently.
 
 ## Architecture and message contracts
 
@@ -48,7 +48,14 @@ _To come:_ the reasoning for both, and how they map to AWS (SQS and SNS, with Dy
 
 ## Delivery semantics
 
-_To come:_ at-least-once delivery, the idempotent `ON CONFLICT (id) DO NOTHING` insert and why it's safe, retries and the dead-letter queue, and the reminder `eventId` for downstream deduplication.
+Submissions are delivered at least once, and the insert is idempotent, so a submission is never saved twice.
+
+- **The coordinator acks only after saving.** The API answers 202 only once RabbitMQ confirms the message, which is persistent on a durable queue. The coordinator saves it in a transaction and acks it only after the commit. If the coordinator stops in between, RabbitMQ delivers the message again.
+- **A second copy changes nothing.** Redelivery means the same message can arrive twice, so the insert is `INSERT ... ON CONFLICT (id) DO NOTHING`. The API gives each submission a new random UUID, so a conflict can only be a second copy of a saved message. The coordinator logs it as a duplicate delivery and acks it, and the table keeps one row.
+- **Failures retry, then dead-letter.** If saving fails, the listener retries 3 times, 1, 2 and 4 seconds apart. A message that still fails is rejected without requeue, and RabbitMQ moves it to `birthday.submissions.dlq`, where it can be inspected or published again. Requeueing it instead would redeliver a message that can never succeed in an endless loop.
+- **Unknown fields are ignored.** The coordinator reads only the contract's fields, so the API can add a field before the coordinator reads it.
+
+_To come:_ the reminder `eventId` for downstream deduplication.
 
 ## Why no ORM
 
@@ -74,6 +81,12 @@ This is also why the insert uses `ON CONFLICT DO NOTHING` rather than an upsert:
 Telling the UI the moment a submission is saved is also future work. The coordinator would publish a `birthday.saved` event after its commit, and the API would consume it and stream it to the browser over Server-Sent Events.
 
 A 503 from the POST doesn't prove the submission was lost. If the broker saves the message but its confirm misses the API's 5-second limit, or the connection drops before the confirm arrives, the API returns 503, and a client that retries creates a second entry. Idempotency keys would close this gap: the client sends an `Idempotency-Key` header and reuses it on retries, the API derives the entry's id from the key, and the coordinator's `ON CONFLICT DO NOTHING` drops the repeat. They aren't built because a key reused with a different body would be dropped silently. Catching that needs a store of keys and request hashes, which the read-only API would have to write.
+
+If the database is down for more than about two minutes, submissions that arrive during the outage end up in the dead-letter queue. Each of the 4 attempts waits up to 30 seconds for a database connection, on top of the 7 seconds of backoff. The messages are kept, but replaying them is a manual publish from the RabbitMQ UI. Production would alert on the dead-letter queue's depth, add a replay command, and pause the listener while the database is down instead of spending its retries.
+
+Errors that can never succeed, such as malformed JSON or a value the table rejects, are retried like brief ones, so they reach the dead-letter queue 7 seconds later than they need to. The listener handles one message at a time, so the messages behind them wait too. Classifying those errors as fatal would skip the retries.
+
+In production, one owner would declare the queues, such as infrastructure code or a RabbitMQ definitions file loaded at startup, and the services would only use them. Here both services declare the submissions queue (see the decision log), and `contracts/submission-queue.json` keeps the two declarations the same.
 
 The UI and the API share the submission contract by convention. A shared package (npm workspaces) or an OpenAPI-generated client would let the compiler check the UI's requests against the API's schema.
 
@@ -101,6 +114,10 @@ One line per decision made during the build. Each started as options with a reco
 | Idempotency keys on POST | Build them now, or leave them as future work | Future work. The basic version is small, but a key reused with a different body would be dropped silently, and catching that needs a key store the read-only API can't write (see Production readiness). |
 | Control characters in text fields | Reject control characters and broken Unicode in names and gift ideas, or reject only NUL | Reject both. Postgres can't store NUL, so the API would accept it and the coordinator would dead-letter it, and a line break or escape code in a name is never real. Gift ideas keep tabs and line breaks. |
 | Where the 5-second publish limit lives | In the POST route, or inside the RabbitMQ publisher | The route. A blocked broker (for example, under a memory alarm) neither confirms nor fails, so without a limit a POST hangs. In the route, the limit also covers a connection that hangs, and a test can check it with a fake clock. |
+| How the coordinator's tests reach PostgreSQL and RabbitMQ | Testcontainers (real ones in throwaway containers), or no new dependencies (a unit test of the JSON mapping, with the rest checked by hand) | Testcontainers. A redelivery that adds a second row, or a dead-lettered message that's dropped, would fail silently, so those paths get automated tests against the real database and broker. The cost is three test-only dependencies, and `mvnw verify` needs Docker. |
+| Unknown fields in a queued submission | Ignore them, or dead-letter the message | Ignore them. Only the API publishes to this queue, and it already rejects unknown fields from clients. Ignoring them lets the API ship a new optional field before the coordinator is redeployed, instead of dead-lettering every submission in between. The insert names its columns, so an extra field can't reach the table. I raised this case while reviewing the tests. |
+| Personal data in the coordinator's failure logs | Leave Postgres's row values out of errors, or keep the full errors | Leave them out (`logServerErrorDetail=false`). A Postgres error includes the whole failing row, so every dead-lettered submission would log a name and an email. The log still names the constraint that failed, and the dead-letter queue keeps the full message. |
+| How the two queue declarations stay in sync | The written contract in CLAUDE.md alone, or a shared `contracts/submission-queue.json` that a test on each side checks | The shared file. The services are in two languages and can't share code, so with only the written contract, a change on one side would go unnoticed until the other side failed with a 406 at startup. Now drift fails CI. I raised this while reviewing Slice 2. |
 
 ## Time spent and tests run
 
