@@ -7,11 +7,26 @@ spring:
     url: jdbc:postgresql://localhost:5432/birthdays
     username: admin
     password: pass
+    hikari:
+      data-source-properties:
+        # Leave row values (names and emails) out of Postgres errors, and so out of the logs.
+        logServerErrorDetail: false
   rabbitmq:
     host: localhost
     port: 5672
     username: admin
     password: pass
+    listener:
+      simple:
+        retry:
+          # Retry a failed message 3 times, 1, 2 and 4 seconds apart.
+          enabled: true
+          max-retries: 3
+          initial-interval: 1s
+          multiplier: 2
+        # Then reject it without putting it back on the queue, so RabbitMQ moves it to
+        # birthday.submissions.dlq instead of redelivering it forever.
+        default-requeue-rejected: false
 
 management:
   endpoint:
