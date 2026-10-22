@@ -19,6 +19,7 @@ Remind:  coordinator (daily, UTC) -> PostgreSQL -> RabbitMQ birthday.reminders -
 | `coordinator/` | Consumer, only writer, scheduler: `SubmissionListener`, `BirthdayRepository`, `ReminderCalculator`, `ReminderJob`, `ReminderPublisher` | Java 21, Spring Boot, Maven wrapper, Spring AMQP, JdbcClient, Actuator |
 | `db/init.sql` | The only schema definition | PostgreSQL |
 | `contracts/submission-queue.json` | The submissions queue declaration both services must match, checked by a test on each side | JSON |
+| `contracts/next-birthday-cases.json` | Test cases for the next-birthday rule, run by the API's `upcoming.ts` tests and the coordinator's `ReminderCalculator` tests | JSON |
 | `compose.yaml` | Runs everything locally, with health checks and a Postgres volume | Docker Compose |
 
 ## Design rules
@@ -29,7 +30,7 @@ Remind:  coordinator (daily, UTC) -> PostgreSQL -> RabbitMQ birthday.reminders -
 - The insert is `INSERT ... ON CONFLICT (id) DO NOTHING`. Ids are per-submission UUIDs from the API, so a conflict can only be a redelivery of a saved message. Keep a code comment on that insert in `BirthdayRepository` saying so, and log "duplicate delivery ignored" when 0 rows are inserted.
 - The listener retries 3 times with backoff, then dead-letters to `birthday.submissions.dlq` (`default-requeue-rejected=false`).
 - The API publishes through a small publisher interface, so tests can mock it and SQS could replace RabbitMQ.
-- Age is never stored. `turningAge` (occurrence year minus birth year) is computed on read.
+- Age is never stored. `turningAge` (occurrence year minus birth year) is computed on read. The API computes the next birthday in `upcoming.ts` and the coordinator in `ReminderCalculator`, and both must pass every case in `contracts/next-birthday-cases.json`.
 - Time is UTC everywhere, and dates travel as `YYYY-MM-DD` strings. In Node, parse dates strictly (JS `Date` turns `2023-02-30` into March 2), and give `pg` a DATE type parser so dates come back as strings. In Java, use `LocalDate`.
 - User text is plain text everywhere. The UI shows it only through Vue's escaped bindings, never with `v-html` or in an `href`, and the reminder contract tells consumers to escape it.
 
@@ -44,11 +45,11 @@ Changing anything in this section needs Ryan's approval first (see "Stop and ask
 | Route | Result |
 |---|---|
 | `POST /api/birthdays` | 202 `{ id }` once the broker confirms. 400 on validation errors (unknown fields included) or malformed JSON, 413 if the body is over 100 KB, 503 if publishing fails or isn't confirmed within 5 seconds, and a generic 500 if RabbitMQ refuses the API's credentials or queue arguments, since a retry can't help. Invalid input is never published. A 202 means accepted, not saved. |
-| `GET /api/birthdays` | List sorted by next upcoming birthday, with days until it and `turningAge`. 503 if the database is unavailable. |
-| `GET /api/birthdays/:id` | One entry. 404 if it doesn't exist (expected briefly while the message is in flight), 400 if the id isn't a UUID, 503 if the database is unavailable. |
+| `GET /api/birthdays` | A JSON array of entries, sorted by `daysUntil`, then by name. Each entry is `{ id, name, email, birthday, reminderWindowDays, giftIdeas?, nextBirthday, daysUntil, turningAge }`, with `giftIdeas` left out when there are none. 503 if the database is unavailable. |
+| `GET /api/birthdays/:id` | One entry, in the same shape. 404 if it doesn't exist (expected briefly while the message is in flight), 400 if the id isn't a UUID, 503 if the database is unavailable. |
 | `GET /health` | API liveness. The coordinator's is `/actuator/health`. |
 
-Unknown routes return 404, and anything unexpected returns 500, both in the error shape. Error responses never include stack traces or SQL; those go to the logs.
+"Unavailable" means the database can't be reached or doesn't answer within 5 seconds (see `isDatabaseUnavailable` in `api/src/db.ts`). Any other database error is a bug and returns 500. Unknown routes return 404, and anything unexpected returns 500, both in the error shape. Error responses never include stack traces or SQL; those go to the logs.
 
 **Submission message** (queue `birthday.submissions`): `{ id, name, email, birthday, reminderWindowDays, giftIdeas?, submittedAt }`. `giftIdeas` is left out when blank. Messages are persistent JSON with content type `application/json`. The API and the coordinator both declare the queue exactly as `contracts/submission-queue.json` describes: durable, and dead-lettering to `birthday.submissions.dlq`. That file is the only written copy of the arguments, and a test on each side checks its declaration against it, so change the file and both declarations together. The API declares the queue because RabbitMQ confirms and then drops a message sent to a queue that doesn't exist yet. If the two declarations differ, RabbitMQ rejects the second one at startup.
 
@@ -67,7 +68,7 @@ Build in this order, and build nothing outside this list. Correctness comes firs
 | 0 | Scaffold, Compose with Postgres and RabbitMQ, `init.sql`, CLAUDE.md, CI, README outline | `docker compose up` shows every service healthy |
 | 1 | Submission schema and POST route | Test cases, then test code, approved before the code; then diff review |
 | 2 | Queue -> coordinator -> DB | A submitted row reaches the DB, and a manual redelivery leaves one row |
-| 3 | List and detail GETs (error cases tested with the database mocked), Vue form, list and detail | Click-through in a browser |
+| 3 | List and detail GETs (tested with the database mocked), Vue form, list and detail | Click-through in a browser |
 | 4 | `ReminderCalculator` | Test cases, then test code, approved before the code; then line-by-line review |
 | 5 | Scheduler, reminder publish, demo cron | A reminder is visible in the RabbitMQ UI |
 | 6 | `scripts/smoke.sh`, `scripts/reset-db.sh`, README completion | A fresh clone runs on the README alone |
@@ -81,6 +82,7 @@ TDD is required where a bug would fail silently:
 - `ReminderCalculator` (JUnit, fixed dates): both window edges, the day before the window opens, Dec -> Jan rollover, Feb 29 in a non-leap year, an already-reminded occurrence, and `turningAge` (including a Feb 29 birthday).
 - The Zod submission schema, including strict dates (`2023-02-30` is rejected).
 - `POST /api/birthdays` (Vitest and supertest, publisher mocked): 202, 400 (including malformed JSON) and 503, and invalid input never publishes.
+- The GET routes (Vitest and supertest, pg's `query` mocked) and `upcoming.ts` (the shared cases): sorting, the response shape, the UTC date, 400 before any query, the id passed only as a parameter, and 503 versus 500.
 - `SubmissionListener` (JUnit against real PostgreSQL and RabbitMQ via Testcontainers): a redelivery leaves one row, a brief error is retried, rejected and malformed messages are dead-lettered, and unknown fields are ignored.
 
 Each one goes through three gates, in order:
