@@ -1,0 +1,77 @@
+{
+  "$comment": "Shared test cases for the next-birthday rule. The API's upcoming.test.ts and the coordinator's ReminderCalculator tests both run every case, so the TypeScript and Java implementations can't drift apart. All dates are UTC, YYYY-MM-DD.",
+  "cases": [
+    {
+      "name": "a birthday later this year",
+      "today": "2026-10-22",
+      "birthday": "1990-12-10",
+      "nextBirthday": "2026-12-10",
+      "daysUntil": 49,
+      "turningAge": 36
+    },
+    {
+      "name": "a birthday today",
+      "today": "2026-10-22",
+      "birthday": "1990-10-22",
+      "nextBirthday": "2026-10-22",
+      "daysUntil": 0,
+      "turningAge": 36
+    },
+    {
+      "name": "a birthday earlier this year",
+      "today": "2026-10-22",
+      "birthday": "1990-03-15",
+      "nextBirthday": "2027-03-15",
+      "daysUntil": 144,
+      "turningAge": 37
+    },
+    {
+      "name": "a Jan 1 birthday on Dec 31",
+      "today": "2026-12-31",
+      "birthday": "2000-01-01",
+      "nextBirthday": "2027-01-01",
+      "daysUntil": 1,
+      "turningAge": 27
+    },
+    {
+      "name": "a Feb 29 birthday in a non-leap year",
+      "today": "2026-01-10",
+      "birthday": "2000-02-29",
+      "nextBirthday": "2026-02-28",
+      "daysUntil": 49,
+      "turningAge": 26
+    },
+    {
+      "name": "a Feb 29 birthday in a leap year",
+      "today": "2028-01-10",
+      "birthday": "2000-02-29",
+      "nextBirthday": "2028-02-29",
+      "daysUntil": 50,
+      "turningAge": 28
+    },
+    {
+      "name": "a Feb 29 birthday on Feb 28 of a non-leap year",
+      "today": "2027-02-28",
+      "birthday": "2000-02-29",
+      "nextBirthday": "2027-02-28",
+      "daysUntil": 0,
+      "turningAge": 27
+    },
+    {
+      "name": "a Feb 29 birthday on Mar 1 of a non-leap year, before a leap year",
+      "today": "2027-03-01",
+      "birthday": "2000-02-29",
+      "nextBirthday": "2028-02-29",
+      "daysUntil": 365,
+      "turningAge": 28
+    },
+    {
+      "name": "someone born today",
+      "today": "2026-10-22",
+      "birthday": "2026-10-22",
+      "nextBirthday": "2026-10-22",
+      "daysUntil": 0,
+      "turningAge": 0
+    }
+  ]
+}
