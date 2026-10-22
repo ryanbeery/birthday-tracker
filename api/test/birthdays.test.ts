@@ -98,6 +98,7 @@ const unavailable = [
   { label: 'a refused connection', error: dbError('connect ECONNREFUSED 127.0.0.1:5432', 'ECONNREFUSED') },
   { label: 'a dropped connection', error: dbError('Connection terminated unexpectedly') },
   { label: "pg's connection timeout", error: dbError('timeout exceeded when trying to connect') },
+  { label: "pg's query timeout", error: dbError('Query read timeout') },
   { label: 'Postgres shutting down (57P01)', error: dbError('terminating connection due to administrator command', '57P01') },
   { label: 'too many connections (53300)', error: dbError('sorry, too many clients already', '53300') },
 ]
