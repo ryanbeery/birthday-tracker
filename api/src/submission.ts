@@ -16,7 +16,7 @@ function plainText(max: number, control: RegExp) {
 }
 
 /** Today's date in UTC as YYYY-MM-DD, read on every call so it rolls over at midnight. */
-function todayUtc() {
+export function todayUtc() {
   // toISOString() is always UTC, e.g. "2026-10-22T18:40:05.123Z". The first
   // 10 characters are the date, in the same format as the birthday.
   return new Date().toISOString().slice(0, 10)

@@ -12,6 +12,8 @@ Content-Type: application/json
   "giftIdeas": "A first edition of her notes"
 }
 
+> {% client.global.set("birthdayId", response.body.id); %}
+
 ### Several bad fields: 400 listing each one
 POST http://localhost:3000/api/birthdays
 Content-Type: application/json
@@ -40,6 +42,15 @@ POST http://localhost:3000/api/birthdays
 Content-Type: application/json
 
 {"name": "Ada
+
+### The list, soonest birthday first: 200
+GET http://localhost:3000/api/birthdays
+
+### The entry from the first request: 200, or 404 for a moment while it's in flight
+GET http://localhost:3000/api/birthdays/{{birthdayId}}
+
+### A malformed id: 400
+GET http://localhost:3000/api/birthdays/not-a-uuid
 
 ### An unknown route: 404
 GET http://localhost:3000/api/unknown
