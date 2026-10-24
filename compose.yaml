@@ -42,6 +42,8 @@ services:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      # Run the reminder job every minute instead of once a day (see application.yml).
+      SPRING_PROFILES_ACTIVE: local
     ports:
       - "8080:8080"
     depends_on:

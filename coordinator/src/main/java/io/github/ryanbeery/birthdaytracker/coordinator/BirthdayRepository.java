@@ -1,9 +1,13 @@
 package io.github.ryanbeery.birthdaytracker.coordinator;
 
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
+
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
-/** Writes to the birthdays table. The coordinator is its only writer. */
+/** Reads and writes the birthdays table. The coordinator is its only writer. */
 @Repository
 class BirthdayRepository {
 
@@ -32,5 +36,24 @@ class BirthdayRepository {
                 .param("giftIdeas", submission.giftIdeas())
                 .update();
         return inserted == 1;
+    }
+
+    /** Every saved birthday. The reminder job checks them all on each run. */
+    List<SavedBirthday> findAll() {
+        return jdbc.sql("""
+                        SELECT id, name, email, birthday, reminder_window_days, gift_ideas,
+                               last_reminded_occurrence
+                        FROM birthdays
+                        """)
+                .query(SavedBirthday.class)
+                .list();
+    }
+
+    /** Records that a reminder went out for this occurrence, so later runs skip it. */
+    void markReminded(UUID id, LocalDate occurrence) {
+        jdbc.sql("UPDATE birthdays SET last_reminded_occurrence = :occurrence WHERE id = :id")
+                .param("occurrence", occurrence)
+                .param("id", id)
+                .update();
     }
 }

@@ -16,6 +16,12 @@ spring:
     port: 5672
     username: admin
     password: pass
+    # ReminderPublisher waits for RabbitMQ to confirm each reminder. Publishing as mandatory
+    # makes RabbitMQ return a reminder that no queue received, instead of dropping it.
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
     listener:
       simple:
         retry:
@@ -33,3 +39,18 @@ management:
     health:
       # List db and rabbit as components, so the health check shows what's down.
       show-components: always
+
+reminders:
+  # When ReminderJob runs, in UTC: every day at midnight. The fields are second, minute,
+  # hour, day of month, month and day of week.
+  cron: "0 0 0 * * *"
+
+---
+# The local profile, which Compose turns on, runs the reminder job every minute, so a
+# reminder appears soon after a submission whose window is open.
+spring:
+  config:
+    activate:
+      on-profile: local
+reminders:
+  cron: "0 * * * * *"
