@@ -25,6 +25,8 @@ The first build downloads the npm and Maven dependencies, so it takes a few minu
 | RabbitMQ management UI | http://localhost:15672 (admin / pass) |
 | PostgreSQL | localhost:5432 (credentials in `.env`) |
 
+In Compose, the coordinator runs the reminder job every minute instead of once a day. A birthday whose reminder window is open gets a reminder within a minute of being saved. To see it, open the RabbitMQ UI, go to Queues and Streams, open `birthday.reminders.email`, expand Get messages and click Get Message(s).
+
 **Troubleshooting**
 
 - *A port is already in use:* stop the program using it, or change the left-hand port for that service in `compose.yaml`.
@@ -55,7 +57,11 @@ Submissions are delivered at least once, and the insert is idempotent, so a subm
 - **Failures retry, then dead-letter.** If saving fails, the listener retries 3 times, 1, 2 and 4 seconds apart. A message that still fails is rejected without requeue, and RabbitMQ moves it to `birthday.submissions.dlq`, where it can be inspected or published again. Requeueing it instead would redeliver a message that can never succeed in an endless loop.
 - **Unknown fields are ignored.** The coordinator reads only the contract's fields, so the API can add a field before the coordinator reads it.
 
-_To come:_ the reminder `eventId` for downstream deduplication.
+Reminders are delivered at least once too.
+
+- **A reminder is recorded only once a queue has it.** The job publishes each reminder, waits for RabbitMQ's publisher confirm, and only then sets `last_reminded_occurrence`. Reminders are published as mandatory, so one that no queue would receive comes back as an error instead of being dropped.
+- **A crash in between sends a duplicate, never nothing.** If the coordinator stops after publishing a reminder but before recording it, the next run sends it again. Every copy has the same `eventId`, `<birthdayId>:<occurrenceDate>`, so the email service can drop repeats. Recording first would risk the opposite: a reminder marked as sent that never went out.
+- **A failed run catches up.** Any error ends the run, and the next run sends whatever is still due, because the rule only asks whether the window is open and whether a reminder already went out for that birthday.
 
 ## Why no ORM
 
@@ -94,6 +100,10 @@ The UI and the API share the submission contract by convention. A shared package
 
 Cross-site scripting is handled where text is displayed: Vue escapes everything it renders, and the reminder contract tells the email service to escape `name` and `giftIdeas`. A Content-Security-Policy header from nginx would be a backstop if escaping were ever bypassed.
 
+The reminder job assumes one coordinator. Two instances would both run it and send each reminder twice. The email service could drop the copies by `eventId`, but scheduler locking, such as ShedLock, would let only one instance run the job.
+
+The job runs once a day, so if a run fails, or the coordinator is down at midnight UTC, the next chance is a day later. That's fine for a window of 2 or more days, but a reminder with a 1-day window would be missed. A run is idempotent, so running the job every hour, or also at startup, would close that gap.
+
 Dates use UTC everywhere, which is simple but not right for every user. East of UTC, a newborn's birthday entered on the day of birth is rejected as "in the future" for up to 14 hours, and reminders follow the UTC date, not the user's. The production fix is a per-user time zone: the browser sends its IANA zone (such as `Australia/Sydney`), the API checks "not after today" in that zone, the zone is stored with the birthday, and the reminder job works out each person's today in their own zone.
 
 ## How I used AI
@@ -125,6 +135,8 @@ One line per decision made during the build. Each started as options with a reco
 | Which database errors return 503 | Every database error, or only the ones where the database can't be reached | Only those: a refused or dropped connection, Postgres shutting down or out of connections, and no connection or no answer within 5 seconds. Anything else, such as a misspelled column, is a bug, gets the generic 500 and shouldn't be retried. This matches the POST, where RabbitMQ refusing the API's setup is a 500. |
 | How the two queue declarations stay in sync | The written contract in CLAUDE.md alone, or a shared `contracts/submission-queue.json` that a test on each side checks | The shared file. The services are in two languages and can't share code, so with only the written contract, a change on one side would go unnoticed until the other side failed with a 406 at startup. Now drift fails CI. I raised this while reviewing Slice 2. |
 | How the reminder job gets today's date | Each calculation reads the clock, or the job reads it once per run and passes it in | Once per run. A run that crosses midnight would otherwise judge some birthdays by the next day's date and could skip a reminder with a 1-day window. It also gives `ReminderCalculator.next` the same shape as `upcoming.ts`. |
+| Where reminders go until the email service exists | Publish to the `birthday.reminders` exchange only, or also declare a durable queue bound to it | Also declare `birthday.reminders.email`. RabbitMQ drops a message that no queue receives, so with the exchange alone, every run would fail until the email service bound a queue, and reminders whose windows closed in the meantime would never go out. The queue keeps reminders until something reads them. In production, the email service would own it. |
+| The reminder's `eventId` | `<birthdayId>:<occurrenceDate>`, or a UUID derived from the two | The readable form. Either one is the same for every copy of a reminder, which is all deduplication needs, and the readable one shows which birthday and year a reminder is for. |
 
 ## Time spent and tests run
 
