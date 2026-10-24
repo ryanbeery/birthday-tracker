@@ -42,7 +42,9 @@ import tools.jackson.databind.json.JsonMapper;
 @SpringBootTest(properties = {
         // Retry after 10 ms instead of seconds, so the dead-letter tests are quick.
         "spring.rabbitmq.listener.simple.retry.initial-interval=10ms",
-        "spring.rabbitmq.listener.simple.retry.max-interval=10ms"
+        "spring.rabbitmq.listener.simple.retry.max-interval=10ms",
+        // Keep the daily reminder job from running in the middle of these tests.
+        "reminders.cron=-"
 })
 @Import(TestcontainersConfiguration.class)
 @ExtendWith(OutputCaptureExtension.class)
