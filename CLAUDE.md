@@ -120,4 +120,6 @@ cp .env.example .env && docker compose up --build   # the whole stack
 cd api && npm ci && npm run lint && npm run type-check && npm test
 cd frontend && npm ci && npm run lint && npm run type-check && npm run build
 cd coordinator && ./mvnw verify                      # mvnw.cmd verify on Windows. Needs Docker running.
+./scripts/smoke.sh                                   # end-to-end check of the running stack (Git Bash on Windows)
+./scripts/reset-db.sh                                # delete every birthday and keep the schema
 ```
